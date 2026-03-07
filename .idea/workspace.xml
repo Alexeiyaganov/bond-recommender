@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="BookmarkManager">
+    <bookmark url="file://$PROJECT_DIR$/bond_recommendations.py" description="@dataclass&#10;class Bond:&#10;    ticker: str&#10;    name: s..." line="20" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="6dedf4a7-4754-46e0-90ea-590e0c555136" name="Default Changelist" comment="" />
+    <list default="true" id="6dedf4a7-4754-46e0-90ea-590e0c555136" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/bond_recommendations.py" beforeDir="false" afterPath="$PROJECT_DIR$/bond_recommendations.py" afterDir="false" />
+    </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -10,7 +15,7 @@
   </component>
   <component name="FileEditorManager">
     <leaf>
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/vercel.json">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="294">
@@ -22,8 +27,17 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/requirements.txt">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="126">
-              <caret line="6" column="12" selection-start-line="6" selection-start-column="12" selection-end-line="6" selection-end-column="12" />
+            <state relative-caret-position="168">
+              <caret line="8" column="13" lean-forward="true" selection-start-line="8" selection-start-column="13" selection-end-line="8" selection-end-column="13" />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/bond_recommendations.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="558">
+              <caret line="400" column="10" selection-start-line="400" selection-start-column="10" selection-end-line="400" selection-end-column="10" />
             </state>
           </provider>
         </entry>
@@ -37,6 +51,11 @@
       </list>
     </option>
   </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>self.use_mock_data</find>
+    </findStrings>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -49,8 +68,9 @@
         <option value="$PROJECT_DIR$/bond-recommender/.gitignore" />
         <option value="$PROJECT_DIR$/bond-recommender/requirements.txt" />
         <option value="$PROJECT_DIR$/.python-version" />
-        <option value="$PROJECT_DIR$/requirements.txt" />
         <option value="$PROJECT_DIR$/vercel.json" />
+        <option value="$PROJECT_DIR$/requirements.txt" />
+        <option value="$PROJECT_DIR$/bond_recommendations.py" />
       </list>
     </option>
   </component>
@@ -108,12 +128,12 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772699791643</updated>
-      <workItem from="1772699794336" duration="2184000" />
+      <workItem from="1772699794336" duration="4936000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="2184000" />
+    <option name="totallyTimeSpent" value="4936000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="-7" y="-7" width="1550" height="838" extended-state="6" />
@@ -203,17 +223,24 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/requirements.txt">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="126">
-          <caret line="6" column="12" selection-start-line="6" selection-start-column="12" selection-end-line="6" selection-end-column="12" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/vercel.json">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="294">
           <caret line="14" column="1" selection-start-line="14" selection-start-column="1" selection-end-line="14" selection-end-column="1" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/requirements.txt">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="168">
+          <caret line="8" column="13" lean-forward="true" selection-start-line="8" selection-start-column="13" selection-end-line="8" selection-end-column="13" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/bond_recommendations.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="558">
+          <caret line="400" column="10" selection-start-line="400" selection-start-column="10" selection-end-line="400" selection-end-column="10" />
         </state>
       </provider>
     </entry>
