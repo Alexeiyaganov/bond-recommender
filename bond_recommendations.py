@@ -59,65 +59,101 @@ class BondAnalyzer:
             # Получаем данные о торгах
             market_url = "https://iss.moex.com/iss/engines/stock/markets/bonds/boards/TQOB/securities.json"
 
-            # <--- ДОБАВЛЕНО: параметры для оптимизации запроса
+            print(f"Запрос к MOEX API: {market_url}")
+
             params = {
                 'iss.meta': 'off',
                 'limit': 100,
             }
 
             response = requests.get(market_url, params=params, timeout=10)
+            print(f"Статус ответа: {response.status_code}")
+
+            if response.status_code != 200:
+                print(f"Ошибка HTTP: {response.status_code}")
+                return self.generate_mock_bonds()
+
             data = response.json()
 
+            # Проверяем структуру данных
             securities = data.get('securities', {}).get('data', [])
             marketdata = data.get('marketdata', {}).get('data', [])
 
-            print(f"Получено {len(securities)} ценных бумаг из MOEX")
+            print(f"Получено securities: {len(securities)}")
+            print(f"Получено marketdata: {len(marketdata)}")
+
+            if len(securities) == 0:
+                print("Нет данных от MOEX API")
+                # Покажем первые 500 символов ответа для отладки
+                print("Первые 500 символов ответа:")
+                print(str(data)[:500])
+                return self.generate_mock_bonds()
 
             # Получаем дополнительные данные по купонам
             bonds = []
             for i, sec in enumerate(securities[:50]):  # Берем топ-50 для начала
                 if i >= len(marketdata):
+                    print(f"Пропускаем {i}, нет marketdata")
                     continue
 
                 ticker = sec[0] if len(sec) > 0 else ''
                 name = sec[2] if len(sec) > 2 else ''
-                short_name = sec[3] if len(sec) > 3 else ''  # <--- ДОБАВЛЕНО: короткое имя
+                short_name = sec[3] if len(sec) > 3 else ''
+                display_name = name or short_name or ticker
 
-                # Используем короткое имя, если длинное пустое
-                display_name = name or short_name
+                # Получаем цену
+                try:
+                    price = float(marketdata[i][12]) if i < len(marketdata) and marketdata[i][12] else 0
+                except (ValueError, TypeError):
+                    price = 0
 
-                price = float(marketdata[i][12]) if marketdata[i][12] else 0
+                if price <= 0:
+                    print(f"Пропускаем {ticker}, цена {price}")
+                    continue
 
                 # Получаем данные о купонах
                 coupon_data = self.fetch_coupon_data(ticker)
 
-                # <--- ИСПРАВЛЕНО: передаем все обязательные поля
+                # Получаем доходность
+                try:
+                    ytm = float(marketdata[i][23]) / 100 if i < len(marketdata) and marketdata[i][23] else 0
+                except (ValueError, TypeError):
+                    ytm = 0
+
+                # Создаем облигацию
                 bond = Bond(
                     ticker=ticker,
                     name=display_name,
                     price=price,
                     coupon=coupon_data['coupon_percent'],
-                    coupon_rub=coupon_data['coupon_rub'],  # Теперь передаем
-                    coupon_period=coupon_data['period_months'],  # Теперь передаем
+                    coupon_rub=coupon_data['coupon_rub'],
+                    coupon_period=coupon_data['period_months'],
                     maturity_date=sec[17] if len(sec) > 17 else '',
-                    yield_to_maturity=float(marketdata[i][23]) / 100 if marketdata[i][23] else 0,
+                    yield_to_maturity=ytm,
                     duration=self.calculate_duration(sec),
-                    credit_rating=self.get_credit_rating_fallback(ticker),  # <--- ИСПРАВЛЕНО
+                    credit_rating=self.get_credit_rating_fallback(ticker),
                     sector=self.determine_sector(name),
-                    volume_24h=float(marketdata[i][14]) if marketdata[i][14] else 0,
+                    volume_24h=float(marketdata[i][14]) if i < len(marketdata) and marketdata[i][14] else 0,
                     lot_size=self.get_lot_size(ticker)
                 )
                 bonds.append(bond)
 
-                # <--- ДОБАВЛЕНО: пауза между запросами
                 if i % 10 == 0 and i > 0:
+                    print(f"Обработано {i} облигаций...")
                     time.sleep(0.5)
 
             print(f"Успешно обработано {len(bonds)} облигаций")
+
+            if len(bonds) == 0:
+                print("Нет облигаций с ценами > 0, используем тестовые данные")
+                return self.generate_mock_bonds()
+
             return bonds
 
         except Exception as e:
             print(f"Ошибка получения данных с MOEX: {e}")
+            import traceback
+            traceback.print_exc()
             return self.generate_mock_bonds()  # Запасной вариант
 
     def fetch_coupon_data(self, ticker):
@@ -293,53 +329,58 @@ class BondAnalyzer:
         """Формирование рекомендаций с расчетом дохода"""
         recommendations = []
 
+        print(f"Обрабатывается {len(bonds)} облигаций для рекомендаций")
+
         for bond in bonds:
             if bond.price <= 0 or bond.yield_to_maturity <= 0:
                 continue
 
-            # Базовые метрики
-            sharpe = self.calculate_sharpe_ratio(bond)
+            try:
+                # Расчет дохода
+                inv_amount = bond.investment_amount(1)
+                monthly_income = bond.monthly_payment(1)
+                monthly_yield = (monthly_income / inv_amount * 100) if inv_amount > 0 else 0
 
-            # <--- ДОБАВЛЕНО: расчет дохода для разных сумм инвестиций
-            inv_amount = bond.investment_amount(1)  # 1 лот
-            monthly_income = bond.monthly_payment(1)
+                rating_scores = {'AAA': 5, 'AA': 4, 'A': 3, 'BBB': 2, 'BB': 1, 'B': 0}
+                rating_score = rating_scores.get(bond.credit_rating, 0)
 
-            # Оценка выгодности
-            monthly_yield = (monthly_income / inv_amount * 100) if inv_amount > 0 else 0
+                total_score = (
+                        monthly_yield * 0.3 +
+                        bond.yield_to_maturity * 100 * 0.3 +
+                        (10 - bond.duration) * 0.2 +
+                        rating_score * 0.2
+                )
 
-            rating_scores = {'AAA': 5, 'AA': 4, 'A': 3, 'BBB': 2, 'BB': 1, 'B': 0}
-            rating_score = rating_scores.get(bond.credit_rating, 0)
+                recommendations.append({
+                    'ticker': bond.ticker,
+                    'name': bond.name,
+                    'price': round(bond.price, 2),
+                    'lot_size': bond.lot_size,
+                    'min_investment': round(inv_amount, 2),
+                    'coupon_rub': round(bond.coupon_rub, 2),
+                    'coupon_period': f"{bond.coupon_period} мес",
+                    'monthly_income': round(monthly_income, 2),
+                    'yield_pa': round(bond.yield_to_maturity * 100, 2),
+                    'monthly_yield': round(monthly_yield, 2),
+                    'maturity': bond.maturity_date,
+                    'duration': round(bond.duration, 2),
+                    'rating': bond.credit_rating,
+                    'sector': bond.sector,
+                    'score': round(total_score, 3)
+                })
+            except Exception as e:
+                print(f"Ошибка при обработке {bond.ticker}: {e}")
+                continue
 
-            # <--- ИСПРАВЛЕНО: обновленная формула скоринга
-            total_score = (
-                    monthly_yield * 0.3 +  # Важность месячного дохода
-                    bond.yield_to_maturity * 100 * 0.3 +  # Важность годовой доходности
-                    (10 - bond.duration) * 0.2 +  # Чем короче, тем лучше
-                    rating_score * 0.2  # Важность рейтинга
-            )
-
-            # <--- ДОБАВЛЕНО: новые поля в рекомендациях
-            recommendations.append({
-                'ticker': bond.ticker,
-                'name': bond.name,
-                'price': round(bond.price, 2),
-                'lot_size': bond.lot_size,
-                'min_investment': round(inv_amount, 2),  # Минимальная сумма для покупки
-                'coupon_rub': round(bond.coupon_rub, 2),
-                'coupon_period': f"{bond.coupon_period} мес",
-                'monthly_income': round(monthly_income, 2),  # Ежемесячный доход с 1 лота
-                'yield_pa': round(bond.yield_to_maturity * 100, 2),
-                'monthly_yield': round(monthly_yield, 2),  # Месячная доходность в %
-                'maturity': bond.maturity_date,
-                'duration': round(bond.duration, 2),
-                'rating': bond.credit_rating,
-                'sector': bond.sector,
-                'score': round(total_score, 3)
-            })
+        print(f"Сформировано {len(recommendations)} рекомендаций")
 
         df = pd.DataFrame(recommendations)
         if not df.empty:
             df = df.sort_values('score', ascending=False)
+            print("Топ-3 по скорингу:")
+            print(df[['ticker', 'name', 'monthly_income', 'yield_pa']].head(3))
+        else:
+            print("DataFrame пуст!")
 
         return df
 

@@ -300,6 +300,44 @@ def debug():
     return jsonify(info)
 
 
+@app.route('/debug-data')
+def debug_data():
+    """Отладочная информация о данных"""
+    try:
+        # Запускаем анализ напрямую
+        analyzer = bond_recommendations.BondAnalyzer()
+        bonds = analyzer.fetch_moex_bonds()
+
+        if bonds:
+            recommendations = analyzer.get_recommendations(bonds)
+
+            info = {
+                'total_bonds_fetched': len(bonds),
+                'total_recommendations': len(recommendations) if not recommendations.empty else 0,
+                'sample_bonds': [
+                    {
+                        'ticker': b.ticker,
+                        'name': b.name,
+                        'price': b.price,
+                        'coupon_rub': b.coupon_rub,
+                        'ytm': b.yield_to_maturity
+                    }
+                    for b in bonds[:5]
+                ],
+                'using_mock': analyzer.use_mock_data,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            if not recommendations.empty:
+                info['sample_recommendations'] = recommendations.head(3).to_dict('records')
+        else:
+            info = {'error': 'No bonds returned'}
+
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 def generate_demo_data():
     """Генерация демо-данных для тестирования"""
     demo_data = [
