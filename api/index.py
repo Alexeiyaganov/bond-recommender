@@ -7,6 +7,7 @@ import sys
 from datetime import datetime
 import tempfile
 import atexit
+import traceback  # <--- ДОБАВЛЕНО: для отладки
 
 # Добавляем путь к родительской папке для импорта
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,8 +15,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Импортируем ваш скрипт
 try:
     import bond_recommendations
+
+    print("✅ bond_recommendations imported successfully")
 except ImportError as e:
-    print(f"Warning: Could not import bond_recommendations: {e}")
+    print(f"❌ Could not import bond_recommendations: {e}")
     bond_recommendations = None
 
 app = Flask(__name__)
@@ -28,7 +31,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 RECOMMENDATIONS_JSON = os.path.join(DATA_DIR, 'recommendations.json')
 RECOMMENDATIONS_CSV = os.path.join(DATA_DIR, 'recommendations.csv')
 
-# HTML шаблон (тот же, что и в web_dashboard.py)
+# HTML шаблон с обновленными названиями колонок
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -37,22 +40,27 @@ HTML_TEMPLATE = '''
     <meta http-equiv="refresh" content="300">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
-        .container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+        .container { max-width: 1400px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
         h1 { color: #333; }
         .timestamp { color: #666; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #4CAF50; color: white; padding: 12px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th { background-color: #4CAF50; color: white; padding: 12px; text-align: left; position: sticky; top: 0; }
         td { padding: 10px; border-bottom: 1px solid #ddd; }
         tr:hover { background-color: #f5f5f5; }
         .rank-1 { background-color: #ffd700; }
         .rank-2 { background-color: #c0c0c0; }
         .rank-3 { background-color: #cd7f32; }
+        .money { font-family: 'Courier New', monospace; font-weight: bold; color: #27ae60; }
         .filters { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
         .filter-group { display: inline-block; margin-right: 20px; }
         select, input { padding: 8px; border-radius: 3px; border: 1px solid #ddd; }
         button { padding: 8px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer; }
         button:hover { background-color: #45a049; }
         .warning { background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .summary { background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .summary-item { display: inline-block; margin-right: 30px; }
+        .summary-label { color: #34495e; font-size: 0.9em; }
+        .summary-value { font-size: 1.3em; font-weight: bold; color: #2980b9; }
     </style>
 </head>
 <body>
@@ -63,6 +71,17 @@ HTML_TEMPLATE = '''
         {% if warning %}
         <div class="warning">{{ warning }}</div>
         {% endif %}
+
+        <div class="summary">
+            <div class="summary-item">
+                <div class="summary-label">💰 Всего облигаций</div>
+                <div class="summary-value" id="totalCount">{{ total_count }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">📈 Лучшая доходность</div>
+                <div class="summary-value" id="bestYield">{{ best_yield }}</div>
+            </div>
+        </div>
 
         <div class="filters">
             <h3>Фильтры:</h3>
@@ -97,12 +116,8 @@ HTML_TEMPLATE = '''
             const minYield = document.getElementById('minYield').value;
             const maxDuration = document.getElementById('maxDuration').value;
             const minRating = document.getElementById('minRating').value;
-
             window.location.href = `/?minYield=${minYield}&maxDuration=${maxDuration}&minRating=${minRating}`;
         }
-
-        // Автообновление каждые 5 минут
-        setTimeout(() => location.reload(), 300000);
     </script>
 </body>
 </html>
@@ -114,9 +129,13 @@ def load_recommendations():
     try:
         if os.path.exists(RECOMMENDATIONS_JSON):
             with open(RECOMMENDATIONS_JSON, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                print(f"✅ Loaded {len(data)} recommendations from {RECOMMENDATIONS_JSON}")
+                return data
+        else:
+            print(f"⚠️ File not found: {RECOMMENDATIONS_JSON}")
     except Exception as e:
-        print(f"Error loading recommendations: {e}")
+        print(f"❌ Error loading recommendations: {e}")
     return None
 
 
@@ -125,9 +144,10 @@ def save_recommendations(data):
     try:
         with open(RECOMMENDATIONS_JSON, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"✅ Saved {len(data)} recommendations to {RECOMMENDATIONS_JSON}")
         return True
     except Exception as e:
-        print(f"Error saving recommendations: {e}")
+        print(f"❌ Error saving recommendations: {e}")
         return False
 
 
@@ -141,69 +161,113 @@ def dashboard():
         if not data:
             # Если данных нет, пробуем сгенерировать
             if bond_recommendations:
+                print("🔄 Generating initial data...")
                 try:
                     bond_recommendations.main()
                     data = load_recommendations()
                 except Exception as e:
+                    print(f"❌ Error generating data: {e}")
+                    traceback.print_exc()
                     return render_template_string(
                         HTML_TEMPLATE,
                         timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         table_html="<p>Ошибка генерации данных. Пожалуйста, попробуйте позже.</p>",
-                        warning=f"Ошибка: {str(e)}"
+                        warning=f"Ошибка: {str(e)}",
+                        total_count=0,
+                        best_yield="0%"
                     )
             else:
                 # Демо-данные для тестирования
+                print("🔄 Using demo data...")
                 data = generate_demo_data()
 
         if not data:
+            print("⚠️ No data available")
             return render_template_string(
                 HTML_TEMPLATE,
                 timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                table_html="<p>Нет данных для отображения</p>"
+                table_html="<p>Нет данных для отображения</p>",
+                total_count=0,
+                best_yield="0%"
             )
 
+        # Преобразуем в DataFrame
         df = pd.DataFrame(data)
+        print(f"📊 DataFrame columns: {list(df.columns)}")
+        print(f"📊 DataFrame shape: {df.shape}")
+
+        # Проверяем, есть ли нужные колонки
+        required_cols = ['yield', 'duration']
+        for col in required_cols:
+            if col not in df.columns:
+                print(f"⚠️ Column {col} not found in data")
+                # Пробуем найти альтернативы
+                if col == 'yield' and 'yield_pa' in df.columns:
+                    df['yield'] = df['yield_pa']
+                elif col == 'yield' and 'ytm' in df.columns:
+                    df['yield'] = df['ytm'] * 100
 
         # Применяем фильтры из URL
-        min_yield = request.args.get('minYield', 7, type=float)
-        max_duration = request.args.get('maxDuration', 8, type=float)
-        min_rating = request.args.get('minRating', 'BBB')
+        min_yield = request.args.get('minYield', 0, type=float)  # <--- ИЗМЕНЕНО: по умолчанию 0
+        max_duration = request.args.get('maxDuration', 100, type=float)  # <--- ИЗМЕНЕНО: большое значение
+        min_rating = request.args.get('minRating', 'CCC')  # <--- ИЗМЕНЕНО: минимальный рейтинг
 
-        # Фильтрация
-        rating_order = {'AAA': 5, 'AA': 4, 'A': 3, 'BBB': 2, 'BB': 1, 'B': 0, 'CCC': -1}
+        print(f"🔍 Filters - min_yield: {min_yield}, max_duration: {max_duration}, min_rating: {min_rating}")
 
         filtered_df = df.copy()
-        filtered_df = filtered_df[filtered_df['yield'] >= min_yield]
-        filtered_df = filtered_df[filtered_df['duration'] <= max_duration]
 
-        if 'rating' in filtered_df.columns:
-            filtered_df['rating_score'] = filtered_df['rating'].map(rating_order).fillna(0)
-            min_rating_score = rating_order.get(min_rating, 2)
+        # Применяем фильтры только если колонки существуют
+        if 'yield' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['yield'] >= min_yield]
+        if 'duration' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['duration'] <= max_duration]
+
+        if 'rating' in filtered_df.columns and min_rating != 'CCC':
+            rating_order = {'AAA': 5, 'AA': 4, 'A': 3, 'BBB': 2, 'BB': 1, 'B': 0, 'CCC': -1}
+            filtered_df['rating_score'] = filtered_df['rating'].map(rating_order).fillna(-1)
+            min_rating_score = rating_order.get(min_rating, -1)
             filtered_df = filtered_df[filtered_df['rating_score'] >= min_rating_score]
 
-        # Сортируем по скорингу
+        # Сортируем по скорингу или доходности
         if 'score' in filtered_df.columns:
             filtered_df = filtered_df.sort_values('score', ascending=False)
+        elif 'yield' in filtered_df.columns:
+            filtered_df = filtered_df.sort_values('yield', ascending=False)
 
         # Добавляем ранг
-        filtered_df.insert(0, 'rank', range(1, len(filtered_df) + 1))
+        if not filtered_df.empty:
+            filtered_df.insert(0, 'rank', range(1, len(filtered_df) + 1))
 
         # Форматируем для отображения
         display_df = filtered_df.copy()
-        for col in ['price', 'coupon', 'duration']:
+
+        # Определяем колонки для отображения
+        display_columns = ['rank']
+
+        # Добавляем колонки, которые есть в данных
+        for col in ['ticker', 'name', 'price', 'coupon_rub', 'monthly_income', 'yield_pa', 'yield',
+                    'duration', 'rating', 'sector']:
             if col in display_df.columns:
-                display_df[col] = display_df[col].apply(lambda x: f"{float(x):.2f}" if x else '0.00')
+                display_columns.append(col)
 
-        if 'yield' in display_df.columns:
-            display_df['yield'] = display_df['yield'].apply(lambda x: f"{float(x):.2f}%")
+        # Если нет новых полей, используем старые
+        if len(display_columns) <= 1:
+            display_columns = ['rank', 'ticker', 'name', 'price', 'coupon', 'yield',
+                               'duration', 'rating', 'sector', 'score']
+            display_columns = [col for col in display_columns if col in display_df.columns]
 
-        if 'score' in display_df.columns:
-            display_df['score'] = display_df['score'].apply(lambda x: f"{float(x):.3f}")
-
-        # Выбираем колонки для отображения
-        display_columns = ['rank', 'ticker', 'name', 'price', 'coupon', 'yield',
-                           'duration', 'rating', 'sector', 'score']
-        display_columns = [col for col in display_columns if col in display_df.columns]
+        # Форматирование чисел
+        for col in display_df.columns:
+            if col in ['price', 'coupon_rub', 'monthly_income']:
+                display_df[col] = display_df[col].apply(lambda x: f"{float(x):,.0f} ₽" if pd.notna(x) else '-')
+            elif col == 'yield_pa':
+                display_df[col] = display_df[col].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else '-')
+            elif col == 'yield':
+                display_df[col] = display_df[col].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else '-')
+            elif col == 'duration':
+                display_df[col] = display_df[col].apply(lambda x: f"{float(x):.1f} лет" if pd.notna(x) else '-')
+            elif col == 'coupon':
+                display_df[col] = display_df[col].apply(lambda x: f"{float(x):.2f}%" if pd.notna(x) else '-')
 
         # Создаем HTML таблицу
         if not display_df.empty:
@@ -213,21 +277,32 @@ def dashboard():
                 escape=False,
                 na_rep='-'
             )
+            total_count = len(display_df)
+            best_yield = f"{display_df['yield_pa'].iloc[0]}" if 'yield_pa' in display_df.columns else f"{
+            display_df['yield'].iloc[0]}" if 'yield' in display_df.columns else "0%"
         else:
             table_html = "<p>Нет данных, соответствующих фильтрам</p>"
+            total_count = 0
+            best_yield = "0%"
 
         return render_template_string(
             HTML_TEMPLATE,
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             table_html=table_html,
-            warning=None
+            warning=None,
+            total_count=total_count,
+            best_yield=best_yield
         )
     except Exception as e:
+        print(f"❌ Error in dashboard: {e}")
+        traceback.print_exc()
         return render_template_string(
             HTML_TEMPLATE,
             timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             table_html=f"<p>Ошибка: {str(e)}</p>",
-            warning="Произошла ошибка при загрузке данных"
+            warning="Произошла ошибка при загрузке данных",
+            total_count=0,
+            best_yield="0%"
         )
 
 
@@ -253,13 +328,14 @@ def update_bonds():
 
     try:
         # Запускаем обновление
-        bond_recommendations.main()
+        result = bond_recommendations.main()
 
         # Проверяем, что данные сохранились
         if os.path.exists(RECOMMENDATIONS_JSON):
             return jsonify({
                 'status': 'success',
                 'message': 'Data updated successfully',
+                'result': result,
                 'timestamp': datetime.now().isoformat()
             })
         else:
@@ -269,9 +345,12 @@ def update_bonds():
                 'timestamp': datetime.now().isoformat()
             }), 202
     except Exception as e:
+        print(f"❌ Error in update_bonds: {e}")
+        traceback.print_exc()
         return jsonify({
             'status': 'error',
             'message': str(e),
+            'traceback': traceback.format_exc(),
             'timestamp': datetime.now().isoformat()
         }), 500
 
@@ -282,28 +361,42 @@ def api_recommendations():
     data = load_recommendations()
     if data:
         return jsonify(data)
-    return jsonify({'error': 'No data available'}), 404
+    return jsonify({'error': 'No data available', 'data_dir': DATA_DIR}), 404
 
 
 @app.route('/debug')
 def debug():
     """Отладочная информация"""
-    info = {
-        'cwd': os.getcwd(),
-        'data_dir': DATA_DIR,
-        'data_exists': os.path.exists(RECOMMENDATIONS_JSON),
-        'files_in_data': os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else [],
-        'bond_recommendations_available': bond_recommendations is not None,
-        'python_version': sys.version,
-        'timestamp': datetime.now().isoformat()
-    }
-    return jsonify(info)
+    try:
+        files = os.listdir(DATA_DIR) if os.path.exists(DATA_DIR) else []
+        data_content = None
+        if os.path.exists(RECOMMENDATIONS_JSON):
+            with open(RECOMMENDATIONS_JSON, 'r') as f:
+                data_content = json.load(f)[:2] if os.path.getsize(RECOMMENDATIONS_JSON) > 0 else []
+
+        info = {
+            'cwd': os.getcwd(),
+            'data_dir': DATA_DIR,
+            'data_dir_exists': os.path.exists(DATA_DIR),
+            'data_file_exists': os.path.exists(RECOMMENDATIONS_JSON),
+            'files_in_data': files,
+            'sample_data': data_content,
+            'bond_recommendations_available': bond_recommendations is not None,
+            'python_version': sys.version,
+            'timestamp': datetime.now().isoformat()
+        }
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 
 @app.route('/debug-data')
 def debug_data():
     """Отладочная информация о данных"""
     try:
+        if not bond_recommendations:
+            return jsonify({'error': 'bond_recommendations not available'}), 500
+
         # Запускаем анализ напрямую
         analyzer = bond_recommendations.BondAnalyzer()
         bonds = analyzer.fetch_moex_bonds()
@@ -330,23 +423,28 @@ def debug_data():
 
             if not recommendations.empty:
                 info['sample_recommendations'] = recommendations.head(3).to_dict('records')
+                info['recommendations_columns'] = list(recommendations.columns)
         else:
             info = {'error': 'No bonds returned'}
 
         return jsonify(info)
     except Exception as e:
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 def generate_demo_data():
-    """Генерация демо-данных для тестирования"""
+    """Генерация демо-данных для тестирования с правильными названиями полей"""
     demo_data = [
         {
             'ticker': 'SU29007RMFS5',
             'name': 'ОФЗ 29007',
             'price': 98.50,
-            'coupon': 7.15,
-            'yield': 7.35,
+            'coupon_rub': 71.50,  # <--- ИЗМЕНЕНО
+            'monthly_income': 595.83,  # <--- ДОБАВЛЕНО
+            'yield_pa': 7.35,  # <--- ИЗМЕНЕНО
             'maturity': '2027-12-15',
             'duration': 3.2,
             'rating': 'AAA',
@@ -357,8 +455,9 @@ def generate_demo_data():
             'ticker': 'RU000A101VR0',
             'name': 'Сбер Sb27R',
             'price': 101.20,
-            'coupon': 8.50,
-            'yield': 8.15,
+            'coupon_rub': 85.00,
+            'monthly_income': 708.33,
+            'yield_pa': 8.15,
             'maturity': '2029-03-21',
             'duration': 4.1,
             'rating': 'AAA',
@@ -369,8 +468,9 @@ def generate_demo_data():
             'ticker': 'RU000A1025J6',
             'name': 'Газпром Капитал',
             'price': 97.80,
-            'coupon': 9.20,
-            'yield': 9.45,
+            'coupon_rub': 92.00,
+            'monthly_income': 766.67,
+            'yield_pa': 9.45,
             'maturity': '2030-06-10',
             'duration': 5.8,
             'rating': 'AA',
@@ -379,17 +479,24 @@ def generate_demo_data():
         }
     ]
     save_recommendations(demo_data)
+    print("✅ Demo data generated and saved")
     return demo_data
 
 
 # При запуске приложения пробуем загрузить или создать данные
 with app.app_context():
-    if not load_recommendations() and bond_recommendations:
-        try:
-            print("Generating initial data...")
-            bond_recommendations.main()
-        except Exception as e:
-            print(f"Error generating initial data: {e}")
+    if not load_recommendations():
+        if bond_recommendations:
+            try:
+                print("🔄 Generating initial data with bond_recommendations...")
+                bond_recommendations.main()
+            except Exception as e:
+                print(f"❌ Error generating initial data: {e}")
+                traceback.print_exc()
+                print("🔄 Falling back to demo data...")
+                generate_demo_data()
+        else:
+            print("🔄 bond_recommendations not available, using demo data...")
             generate_demo_data()
 
 # Для локальной разработки
