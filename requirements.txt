@@ -1,7 +1,7 @@
 flask==3.0.3
 pandas==2.2.3
 numpy==2.0.2
-requests==2.31.0
+requests==2.33.0
 gunicorn==21.2.0
 python-dateutil==2.9.0.post0
 pytz==2024.1
